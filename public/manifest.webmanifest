@@ -1,0 +1,18 @@
+{
+  "name": "SlideSnap AI - Conference Slide Organizer",
+  "short_name": "SlideSnap",
+  "description": "Snap, auto-organize by topic, summarize, and export conference presentation slides directly on your mobile device.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d0f17",
+  "theme_color": "#0d0f17",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
