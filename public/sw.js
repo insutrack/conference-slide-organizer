@@ -1,16 +1,17 @@
 // SlideSnap Offline Cache Service Worker
-const CACHE_NAME = 'slidesnap-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/favicon.svg'
-];
+const CACHE_NAME = 'slidesnap-v2';
 
 self.addEventListener('install', (event) => {
+  const scope = self.registration.scope;
+  const assetsToCache = [
+    scope,
+    scope + 'index.html',
+    scope + 'manifest.webmanifest',
+    scope + 'favicon.svg'
+  ];
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return cache.addAll(assetsToCache);
     }).then(() => self.skipWaiting())
   );
 });
@@ -26,7 +27,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass through non-GET requests or external API calls (e.g. Gemini)
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
@@ -34,7 +34,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
         if (cachedResponse) {
-          // Return cache and fetch fresh version in background
           fetch(event.request).then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
               caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
@@ -43,13 +42,13 @@ self.addEventListener('fetch', (event) => {
           return cachedResponse;
         }
         return fetch(event.request).then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+          if (!networkResponse || networkResponse.status !== 200) {
             return networkResponse;
           }
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
           return networkResponse;
-        }).catch(() => caches.match('/index.html'));
+        }).catch(() => caches.match(self.registration.scope) || caches.match(self.registration.scope + 'index.html'));
       })
     );
   }
