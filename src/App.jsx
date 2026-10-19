@@ -6,21 +6,15 @@ import {
   FileDown,
   Sparkles,
   Settings,
-  FolderPlus,
   Search,
-  Upload,
   Plus,
   Laptop,
-  CheckCircle2,
   Calendar,
-  MapPin,
-  ChevronRight,
-  Filter,
-  FileText
+  Clock,
+  Flag
 } from 'lucide-react';
 import {
   getConferences,
-  saveConference,
   getTopics,
   saveTopic,
   deleteTopic,
@@ -37,17 +31,19 @@ import { PresentationViewer } from './components/PresentationViewer';
 import { SessionSummaryModal } from './components/SessionSummaryModal';
 import { DataTransferModal } from './components/DataTransferModal';
 import { SettingsModal } from './components/SettingsModal';
-import { exportSlideDeckToPdf } from './services/pdfExport';
+import { SessionCompileModal } from './components/SessionCompileModal';
+import { EndOfDayReview } from './components/EndOfDayReview';
+import { exportToPdf } from './services/exportService';
 import confetti from 'canvas-confetti';
 
 export default function App() {
-  const [conferences, setConferences] = useState([]);
+  const [_conferences, setConferences] = useState([]);
   const [activeConference, setActiveConference] = useState(null);
   const [topics, setTopics] = useState([]);
   const [activeTopicId, setActiveTopicId] = useState(null);
   const [slides, setSlides] = useState([]);
 
-  // Active View Tab: 'camera' | 'organizer'
+  // Active View Tab: 'camera' | 'review' | 'organizer'
   const [viewMode, setViewMode] = useState('camera');
 
   // Search & Filter
@@ -61,6 +57,7 @@ export default function App() {
   const [showSessionSummary, setShowSessionSummary] = useState(false);
   const [showDataTransfer, setShowDataTransfer] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [compilingTopic, setCompilingTopic] = useState(null); // When session finishes
 
   // Settings
   const [geminiApiKey, setGeminiApiKey] = useState('');
@@ -106,7 +103,7 @@ export default function App() {
     setSlides(loadedSlides);
   };
 
-  // Handle slide capture from camera or file
+  // Handle slide capture from camera or file (Zero-delay auto-save)
   const handleSlideCaptured = async (slideData) => {
     const newSlide = {
       id: `slide-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -145,18 +142,53 @@ export default function App() {
       conferenceId: activeConference?.id
     };
     await saveTopic(newTopic);
-    await refreshActiveData(activeConference.id);
+    await refreshActiveData(activeConference?.id);
   };
 
   // Handle delete topic
   const handleDeleteTopic = async (topicId) => {
     await deleteTopic(topicId);
-    await refreshActiveData(activeConference.id);
+    await refreshActiveData(activeConference?.id);
+  };
+
+  // Handle Quick Start New Session with Topic Name
+  const handleStartSession = async (topicName) => {
+    if (!topicName || !topicName.trim()) return;
+
+    // Check if topic exists
+    const existing = topics.find((t) => t.name.toLowerCase() === topicName.trim().toLowerCase());
+    if (existing) {
+      setActiveTopicId(existing.id);
+      return;
+    }
+
+    // Colors for session badges
+    const colors = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#6366f1'];
+    const newTopic = {
+      id: `topic-${Date.now()}`,
+      conferenceId: activeConference?.id,
+      name: topicName.trim(),
+      speaker: '',
+      color: colors[topics.length % colors.length],
+      order: topics.length,
+      createdAt: Date.now()
+    };
+
+    await saveTopic(newTopic);
+    await refreshActiveData(activeConference?.id);
+    setActiveTopicId(newTopic.id);
+    confetti({ particleCount: 30, spread: 45 });
+  };
+
+  // Handle Finish Session
+  const handleFinishSession = (topicId) => {
+    const topic = topics.find((t) => t.id === (topicId || activeTopicId)) || topics[0];
+    setCompilingTopic(topic);
   };
 
   // Export current view or presentation directly to PDF
   const handleDirectPdfExport = async () => {
-    const activeTopic = topics.find((t) => t.id === (filterTopicId === 'all' ? activeTopicId : filterTopicId));
+    const currentTopic = topics.find((t) => t.id === (filterTopicId === 'all' ? activeTopicId : filterTopicId));
     const slidesToExport = filterTopicId === 'all' 
       ? slides 
       : slides.filter((s) => s.topicId === filterTopicId);
@@ -167,10 +199,10 @@ export default function App() {
     }
 
     try {
-      await exportSlideDeckToPdf({
-        conferenceTitle: activeConference?.name,
-        topicTitle: activeTopic ? activeTopic.name : 'All Sessions',
-        speaker: activeTopic?.speaker,
+      await exportToPdf({
+        conferenceTitle: activeConference?.name || 'Conference',
+        sessionTitle: currentTopic ? currentTopic.name : 'All Sessions',
+        speaker: currentTopic?.speaker,
         slides: slidesToExport,
         includeNotes: true
       });
@@ -179,9 +211,6 @@ export default function App() {
       alert('Export failed: ' + err.message);
     }
   };
-
-  // Active topic object
-  const activeTopic = topics.find((t) => t.id === activeTopicId) || topics[0];
 
   // Filtered slides for organizer grid
   const filteredSlides = slides.filter((slide) => {
@@ -201,9 +230,9 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       {/* Top Application Navigation Bar */}
       <header className="app-header">
-        {/* Brand & Active Conference */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div className="brand-title">
+        {/* Brand & Conference Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="brand-title" style={{ cursor: 'pointer' }} onClick={() => setViewMode('camera')}>
             <span style={{ fontSize: 22 }}>📸</span>
             <span>SlideSnap AI</span>
           </div>
@@ -224,19 +253,19 @@ export default function App() {
               className="desktop-conf-pill"
             >
               <Calendar size={13} color="var(--accent-cyan)" />
-              <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {activeConference.name}
               </span>
             </div>
           )}
         </div>
 
-        {/* View Switcher: Camera vs Organizer */}
+        {/* View Switcher: Live Camera vs End-of-Day Review vs Grid Organizer */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            background: 'rgba(5, 8, 16, 0.6)',
+            background: 'rgba(5, 8, 16, 0.7)',
             padding: 3,
             borderRadius: 'var(--radius-full)',
             border: '1px solid var(--border-subtle)'
@@ -246,40 +275,52 @@ export default function App() {
             className={`btn btn-pill ${viewMode === 'camera' ? 'btn-primary' : 'btn-ghost'}`}
             style={{ fontSize: 13, padding: '6px 14px' }}
             onClick={() => setViewMode('camera')}
+            title="Live camera snap mode"
           >
             <Camera size={15} />
-            <span>Camera</span>
+            <span>Live Camera</span>
+          </button>
+
+          <button
+            className={`btn btn-pill ${viewMode === 'review' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontSize: 13, padding: '6px 14px' }}
+            onClick={() => setViewMode('review')}
+            title="End-of-day review: scroll, add notes, and convert"
+          >
+            <Clock size={15} color={viewMode === 'review' ? '#ffffff' : 'var(--accent-amber)'} />
+            <span>End-of-Day Review</span>
           </button>
 
           <button
             className={`btn btn-pill ${viewMode === 'organizer' ? 'btn-primary' : 'btn-ghost'}`}
             style={{ fontSize: 13, padding: '6px 14px' }}
             onClick={() => setViewMode('organizer')}
+            title="Grid organizer view"
           >
             <Layers size={15} />
             <span>Organizer ({slides.length})</span>
           </button>
         </div>
 
-        {/* Action Controls */}
+        {/* Header Action Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             className="btn btn-secondary"
-            style={{ fontSize: 13, padding: '7px 12px' }}
+            style={{ fontSize: 12.5, padding: '6px 12px' }}
             onClick={() => setShowPresentation(true)}
             title="Present full screen interactive slide deck"
           >
-            <Play size={14} color="var(--accent-emerald)" />
-            <span className="hide-on-mobile">Present Deck</span>
+            <Play size={13} color="var(--accent-emerald)" />
+            <span className="hide-on-mobile">Present</span>
           </button>
 
           <button
             className="btn btn-secondary"
-            style={{ fontSize: 13, padding: '7px 12px' }}
+            style={{ fontSize: 12.5, padding: '6px 12px' }}
             onClick={() => setShowSessionSummary(true)}
-            title="Generate & view executive session briefing"
+            title="AI Executive session briefing"
           >
-            <Sparkles size={14} color="var(--accent-purple)" />
+            <Sparkles size={13} color="var(--accent-purple)" />
             <span className="hide-on-mobile">AI Brief</span>
           </button>
 
@@ -287,9 +328,9 @@ export default function App() {
             className="btn btn-ghost btn-pill"
             style={{ width: 36, height: 36, padding: 0 }}
             onClick={() => setShowDataTransfer(true)}
-            title="Phone ➔ Laptop instant transfer"
+            title="Phone ➔ Laptop instant sync"
           >
-            <Laptop size={17} color="var(--accent-cyan)" />
+            <Laptop size={16} color="var(--accent-cyan)" />
           </button>
 
           <button
@@ -298,14 +339,22 @@ export default function App() {
             onClick={() => setShowSettings(true)}
             title="Settings & API key"
           >
-            <Settings size={17} />
+            <Settings size={16} />
           </button>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-        {viewMode === 'camera' ? (
+        {/* PERSISTENT CAMERA VIEW CONTAINER (Never drops stream or re-requests permission on tab change!) */}
+        <div
+          style={{
+            display: viewMode === 'camera' ? 'flex' : 'none',
+            flex: 1,
+            height: '100%',
+            overflow: 'hidden'
+          }}
+        >
           <CameraView
             conference={activeConference}
             topics={topics}
@@ -319,9 +368,27 @@ export default function App() {
               setFilterTopicId(activeTopicId || 'all');
               setViewMode('organizer');
             }}
+            onStartSession={handleStartSession}
+            onFinishSession={handleFinishSession}
+            onGoToReview={() => setViewMode('review')}
           />
-        ) : (
-          /* Organizer & Slide Gallery View */
+        </div>
+
+        {/* END-OF-DAY REVIEW VIEW (Scroll, inspect, add notes, and convert) */}
+        {viewMode === 'review' && (
+          <EndOfDayReview
+            conference={activeConference}
+            topics={topics}
+            slides={slides}
+            onUpdateSlide={handleSaveSlide}
+            onDeleteSlide={handleDeleteSlide}
+            onOpenSlideDetail={(slide) => setSelectedSlideForDetail(slide)}
+            onBackToCamera={() => setViewMode('camera')}
+          />
+        )}
+
+        {/* ORGANIZER GRID VIEW */}
+        {viewMode === 'organizer' && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 22px', overflowY: 'auto' }}>
             {/* Top Toolbar: Topic Filter Pills & Search */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 16 }}>
@@ -373,7 +440,7 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Search & PDF Export */}
+              {/* Search & Direct Export */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ position: 'relative', minWidth: 200 }}>
                   <Search size={15} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
@@ -427,11 +494,11 @@ export default function App() {
                     className="btn btn-secondary"
                     style={{ fontSize: 12, padding: '6px 12px' }}
                     onClick={() => {
-                      setActiveTopicId(filterTopicId);
-                      setShowSessionSummary(true);
+                      const t = topics.find((top) => top.id === filterTopicId);
+                      setCompilingTopic(t);
                     }}
                   >
-                    <Sparkles size={13} color="var(--accent-cyan)" /> Session Summary
+                    <Flag size={13} color="var(--accent-emerald)" /> Compile & Convert
                   </button>
                   <button
                     className="btn btn-primary"
@@ -490,7 +557,7 @@ export default function App() {
                           )}
                           {slide.aiSummary && (
                             <span className="badge" style={{ background: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-purple)', fontSize: 10 }}>
-                              AI Summarized
+                              AI Brief
                             </span>
                           )}
                           {slide.notes && (
@@ -519,6 +586,24 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Session Compile & Action Hub Modal (Opened on "Finish Session") */}
+      {compilingTopic && (
+        <SessionCompileModal
+          sessionTopic={compilingTopic}
+          conference={activeConference}
+          slides={slides.filter((s) => s.topicId === compilingTopic.id)}
+          onClose={() => setCompilingTopic(null)}
+          onStartNewSession={() => {
+            setCompilingTopic(null);
+            setViewMode('camera');
+          }}
+          onGoToReview={() => {
+            setCompilingTopic(null);
+            setViewMode('review');
+          }}
+        />
+      )}
 
       {/* Modals */}
       {showTopicManager && (
