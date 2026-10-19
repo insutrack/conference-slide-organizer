@@ -11,6 +11,9 @@
     <meta name="apple-mobile-web-app-title" content="SlideSnap" />
     <link rel="apple-touch-icon" href="%BASE_URL%favicon.svg" />
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>SlideSnap AI — Conference Camera & Smart Slide Organizer</title>
     <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,10 +24,67 @@
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
+      // Global force reload helper for iPhone WebClip / PWA
+      window.forceReloadSlideSnap = async function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) {
+              await reg.unregister();
+            }
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            for (const key of keys) {
+              await caches.delete(key);
+            }
+          }
+        } catch (e) {
+          console.warn('Error clearing cache:', e);
+        }
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.location.replace(cleanUrl + '?v=' + Date.now());
+      };
+
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('%BASE_URL%sw.js').catch((err) => {
-            console.warn('SW registration failed:', err);
+          navigator.serviceWorker
+            .register('%BASE_URL%sw.js')
+            .then((registration) => {
+              // Check for update immediately
+              registration.update();
+
+              // Check for update whenever app returns to foreground (iOS app switcher / wake)
+              document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                  registration.update();
+                }
+              });
+
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                if (!newWorker) return;
+
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Notify app that a new version is waiting
+                    window.dispatchEvent(
+                      new CustomEvent('slidesnap-new-version', { detail: { registration } })
+                    );
+                  }
+                });
+              });
+            })
+            .catch((err) => {
+              console.warn('SW registration issue:', err);
+            });
+
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!refreshing) {
+              refreshing = true;
+              window.location.reload();
+            }
           });
         });
       }

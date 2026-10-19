@@ -11,7 +11,8 @@ import {
   Laptop,
   Calendar,
   Clock,
-  Flag
+  Flag,
+  RefreshCw
 } from 'lucide-react';
 import {
   getConferences,
@@ -58,9 +59,43 @@ export default function App() {
   const [showDataTransfer, setShowDataTransfer] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [compilingTopic, setCompilingTopic] = useState(null); // When session finishes
+  const [newVersionAvailable, setNewVersionAvailable] = useState(false);
+  const [waitingWorker, setWaitingWorker] = useState(null);
 
   // Settings
   const [geminiApiKey, setGeminiApiKey] = useState('');
+
+  // Service worker update listener
+  useEffect(() => {
+    const handleNewVersion = (e) => {
+      setNewVersionAvailable(true);
+      if (e.detail?.registration?.waiting) {
+        setWaitingWorker(e.detail.registration.waiting);
+      }
+    };
+
+    window.addEventListener('slidesnap-new-version', handleNewVersion);
+    return () => window.removeEventListener('slidesnap-new-version', handleNewVersion);
+  }, []);
+
+  const handleApplyUpdate = () => {
+    if (waitingWorker) {
+      waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    }
+    if (window.forceReloadSlideSnap) {
+      window.forceReloadSlideSnap();
+    } else {
+      window.location.reload();
+    }
+  };
+
+  const handleForceRefresh = () => {
+    if (window.forceReloadSlideSnap) {
+      window.forceReloadSlideSnap();
+    } else {
+      window.location.reload();
+    }
+  };
 
   // Initial load
   useEffect(() => {
@@ -336,6 +371,15 @@ export default function App() {
           <button
             className="btn btn-ghost btn-pill"
             style={{ width: 36, height: 36, padding: 0 }}
+            onClick={handleForceRefresh}
+            title="Force Refresh / Update App (Wipe cache)"
+          >
+            <RefreshCw size={15} color="var(--accent-amber)" />
+          </button>
+
+          <button
+            className="btn btn-ghost btn-pill"
+            style={{ width: 36, height: 36, padding: 0 }}
             onClick={() => setShowSettings(true)}
             title="Settings & API key"
           >
@@ -343,6 +387,36 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* Top Update Notification Banner */}
+      {newVersionAvailable && (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%)',
+            color: '#ffffff',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 12.5,
+            fontWeight: 600,
+            boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+            zIndex: 100
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={15} />
+            <span>New SlideSnap update ready! Tap to load latest version.</span>
+          </div>
+          <button
+            className="btn btn-pill"
+            style={{ background: '#ffffff', color: '#0a0d16', fontSize: 11.5, padding: '4px 12px', border: 'none', fontWeight: 700 }}
+            onClick={handleApplyUpdate}
+          >
+            <RefreshCw size={12} /> Reload Now
+          </button>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>

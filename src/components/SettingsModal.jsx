@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import {
   X,
   Key,
-  Volume2,
-  Trash2,
   RotateCcw,
   Check,
   ShieldCheck,
-  ExternalLink
+  ExternalLink,
+  RefreshCw,
+  Smartphone
 } from 'lucide-react';
 import { saveSetting } from '../services/storage';
 
@@ -19,6 +19,7 @@ export function SettingsModal({
 }) {
   const [apiKey, setApiKey] = useState(geminiApiKey || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -30,18 +31,27 @@ export function SettingsModal({
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 
+  const handleForceRefresh = async () => {
+    setIsRefreshing(true);
+    if (window.forceReloadSlideSnap) {
+      await window.forceReloadSlideSnap();
+    } else {
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="modal-backdrop">
-      <div className="modal-container glass-modal" style={{ maxWidth: 540 }}>
+      <div className="modal-container glass-modal" style={{ maxWidth: 540, maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ padding: 6, borderRadius: 8, background: 'rgba(139, 92, 246, 0.2)' }}>
               <Key size={18} color="var(--accent-purple)" />
             </div>
             <div>
-              <h3 style={{ fontSize: 16 }}>App Settings & AI Configuration</h3>
+              <h3 style={{ fontSize: 16 }}>App Settings & Version</h3>
               <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                Customize AI intelligence and slide tools
+                SlideSnap v3.2.0 • Session Hub & End-of-Day Review
               </p>
             </div>
           </div>
@@ -54,7 +64,43 @@ export function SettingsModal({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* iPhone / PWA Home Screen Refresh Banner */}
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(6, 182, 212, 0.12) 100%)',
+              border: '1px solid rgba(139, 92, 246, 0.35)',
+              borderRadius: 12,
+              padding: '14px 16px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <div style={{ padding: 6, borderRadius: 8, background: 'rgba(139, 92, 246, 0.3)', color: '#ffffff' }}>
+                <Smartphone size={18} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h4 style={{ fontSize: 13.5, color: '#ffffff', fontWeight: 700 }}>
+                  iPhone Home Screen Shortcut Update
+                </h4>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.45 }}>
+                  If your iPhone home screen icon is still showing an older cached version, tap below to wipe the offline cache and immediately load the latest release:
+                </p>
+
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: 12.5, padding: '7px 14px', width: '100%' }}
+                    onClick={handleForceRefresh}
+                    disabled={isRefreshing}
+                  >
+                    <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
+                    <span>{isRefreshing ? 'Clearing Cache & Updating...' : 'Force Update App (Clear iPhone Cache)'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Gemini API Key Form */}
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -85,7 +131,7 @@ export function SettingsModal({
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-              <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>
+              <button type="submit" className="btn btn-secondary" style={{ fontSize: 13 }}>
                 {savedSuccess ? <Check size={14} /> : null}
                 {savedSuccess ? 'Saved' : 'Save Key'}
               </button>
@@ -103,7 +149,7 @@ export function SettingsModal({
               color: 'var(--text-secondary)'
             }}
           >
-            <strong>Offline Conference Mode:</strong> If no API key is supplied or if conference hall Wi-Fi drops, SlideSnap automatically uses on-device OCR and local heuristic synthesis to organize and summarize slides.
+            <strong>Offline Conference Mode:</strong> If no API key is supplied or conference hall Wi-Fi drops, SlideSnap automatically uses on-device OCR and local heuristic synthesis to organize and summarize slides.
           </div>
 
           {/* Reset / Sample Data */}
