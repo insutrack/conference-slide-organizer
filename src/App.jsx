@@ -23,7 +23,9 @@ import {
   saveSlide,
   deleteSlide,
   getSetting,
-  initializeSampleDataIfEmpty
+  initializeBlankState,
+  purgeOldDemoData,
+  clearAllData
 } from './services/storage';
 import { CameraView } from './components/CameraView';
 import { TopicManagerModal } from './components/TopicManagerModal';
@@ -100,19 +102,22 @@ export default function App() {
   // Initial load
   useEffect(() => {
     async function loadData() {
-      await initializeSampleDataIfEmpty();
+      // Purge any stale demo conferences / slides from previous versions
+      await purgeOldDemoData();
+      const initialConf = await initializeBlankState();
 
       const confs = await getConferences();
       setConferences(confs);
 
-      if (confs.length > 0) {
-        const initialConf = confs[0];
+      if (initialConf) {
         setActiveConference(initialConf);
 
         const loadedTopics = await getTopics(initialConf.id);
         setTopics(loadedTopics);
         if (loadedTopics.length > 0) {
           setActiveTopicId(loadedTopics[0].id);
+        } else {
+          setActiveTopicId(null);
         }
 
         const loadedSlides = await getSlides(initialConf.id);
@@ -757,10 +762,12 @@ export default function App() {
           geminiApiKey={geminiApiKey}
           onSaveApiKey={(key) => setGeminiApiKey(key)}
           onResetSampleData={async () => {
-            await initializeSampleDataIfEmpty();
-            if (activeConference) {
-              await refreshActiveData(activeConference.id);
-            }
+            await clearAllData();
+            const freshConf = await initializeBlankState();
+            setActiveConference(freshConf);
+            setTopics([]);
+            setSlides([]);
+            setActiveTopicId(null);
           }}
           onClose={() => setShowSettings(false)}
         />

@@ -10,13 +10,16 @@ import {
   ShieldCheck,
   Check,
   CheckCircle2,
-  Layers
+  Layers,
+  Edit3,
+  X,
+  Sparkles
 } from 'lucide-react';
 import { playShutterSound } from '../utils/audio';
 
 export function CameraView({
   conference,
-  topics,
+  topics = [],
   activeTopicId,
   onSelectTopic,
   onOpenTopicManager: _onOpenTopicManager,
@@ -30,6 +33,7 @@ export function CameraView({
 }) {
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
+  const topicInputRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [facingMode, setFacingMode] = useState('environment'); // 'environment' is rear camera
   const [cameraError, setCameraError] = useState(null);
@@ -39,10 +43,19 @@ export function CameraView({
   const [newTopicInput, setNewTopicInput] = useState('');
   const [isCreatingNewSession, setIsCreatingNewSession] = useState(false);
   const [lastSavedToast, setLastSavedToast] = useState('');
+  const [missingSessionPrompt, setMissingSessionPrompt] = useState(false);
 
-  const activeTopic = topics.find((t) => t.id === activeTopicId) || topics[0];
+  // Active topic object
+  const activeTopic = topics.find((t) => t.id === activeTopicId) || null;
 
-  // Start & Maintain Camera Stream (without dropping unnecessarily)
+  // Auto-focus input when prompt or session creation opens
+  useEffect(() => {
+    if ((!activeTopic || isCreatingNewSession) && topicInputRef.current) {
+      topicInputRef.current.focus();
+    }
+  }, [activeTopic, isCreatingNewSession]);
+
+  // Start & Maintain Camera Stream
   useEffect(() => {
     let active = true;
 
@@ -53,7 +66,6 @@ export function CameraView({
           throw new Error('Camera hardware access is not directly available in this browser window.');
         }
 
-        // Try high-res first, fallback gracefully
         const constraints = {
           video: {
             facingMode: { ideal: facingMode },
@@ -85,7 +97,6 @@ export function CameraView({
 
     return () => {
       active = false;
-      // Do not prematurely tear down stream if switching between views
     };
   }, [facingMode]);
 
@@ -98,20 +109,40 @@ export function CameraView({
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
-  // Capture Frame Immediately (Rapid Snap - Auto-saved without blocking modals)
+  // Start Session with Custom Name
+  const handleStartSessionSubmit = (e) => {
+    if (e) e.preventDefault();
+    const cleanName = newTopicInput.trim();
+    if (!cleanName) return;
+
+    if (onStartSession) {
+      onStartSession(cleanName);
+    }
+    setNewTopicInput('');
+    setIsCreatingNewSession(false);
+    setMissingSessionPrompt(false);
+  };
+
+  // Capture Frame Immediately (Rapid Auto-Save)
   const triggerCapture = () => {
+    // Check if user has entered a session name before taking pictures
+    if (!activeTopic) {
+      setMissingSessionPrompt(true);
+      setIsCreatingNewSession(true);
+      if (topicInputRef.current) topicInputRef.current.focus();
+      return;
+    }
+
     const slideNumber = recentSlides.length + 1;
-    const defaultTitle = `${activeTopic ? activeTopic.name : 'Slide'} - Slide #${slideNumber}`;
+    const defaultTitle = `${activeTopic.name} - Slide #${slideNumber}`;
 
     if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
       const video = videoRef.current;
 
-      // Play Shutter Sound & Flash
       playShutterSound();
       setIsFlashing(true);
       setTimeout(() => setIsFlashing(false), 200);
 
-      // Render high-res frame to canvas
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -120,19 +151,18 @@ export function CameraView({
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
-      // Instant Auto-Save
       onSlideCaptured({
         imageData: dataUrl,
         title: defaultTitle,
-        topicId: activeTopic ? activeTopic.id : null,
+        topicId: activeTopic.id,
         conferenceId: conference ? conference.id : null,
         notes: ''
       });
 
       showSavedConfirmation(slideNumber);
     } else {
-      // If camera is not active or blocked in environment, generate crisp slide snapshot or trigger native camera
-      simulateOrFallbackCapture(defaultTitle, slideNumber);
+      // Clean fallback if camera hardware is not available
+      fallbackCaptureClean(defaultTitle, slideNumber);
     }
   };
 
@@ -142,8 +172,8 @@ export function CameraView({
     setTimeout(() => setLastSavedToast(''), 2200);
   };
 
-  // Fallback simulator for desktop/test environments without webcam
-  const simulateOrFallbackCapture = (defaultTitle, slideNumber) => {
+  // Clean fallback slide (zero fake preloaded text)
+  const fallbackCaptureClean = (defaultTitle, slideNumber) => {
     playShutterSound();
     setIsFlashing(true);
     setTimeout(() => setIsFlashing(false), 200);
@@ -153,64 +183,33 @@ export function CameraView({
     canvas.height = 1080;
     const ctx = canvas.getContext('2d');
 
-    // Background gradient
-    const grad = ctx.createLinearGradient(0, 0, 1920, 1080);
-    grad.addColorStop(0, '#0f172a');
-    grad.addColorStop(1, '#020617');
-    ctx.fillStyle = grad;
+    // Blank dark presentation canvas
+    ctx.fillStyle = '#0a0d16';
     ctx.fillRect(0, 0, 1920, 1080);
 
-    // Header bar
+    // Subtle header accent
     ctx.fillStyle = activeTopic?.color || '#8b5cf6';
-    ctx.fillRect(80, 80, 16, 80);
+    ctx.fillRect(80, 80, 14, 70);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 54px sans-serif';
-    ctx.fillText(activeTopic?.name || 'Conference Presentation', 120, 140);
+    ctx.font = 'bold 50px sans-serif';
+    ctx.fillText(activeTopic?.name || 'Session Slide', 120, 135);
 
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '32px sans-serif';
-    ctx.fillText(`${conference?.name || 'Annual Summit'} • Slide #${slideNumber}`, 120, 200);
-
-    // Decorative content lines
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(80, 260);
-    ctx.lineTo(1840, 260);
-    ctx.stroke();
-
-    const sampleBullets = [
-      `Key insight captured from presenter`,
-      `Critical architectural milestone & roadmap`,
-      `Real-time benchmark & performance metrics`,
-      `Auto-archived with zero delay into ${activeTopic?.name || 'Session'}`
-    ];
-
-    let y = 380;
-    sampleBullets.forEach((bullet) => {
-      ctx.fillStyle = activeTopic?.color || '#8b5cf6';
-      ctx.beginPath();
-      ctx.arc(120, y - 10, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '38px sans-serif';
-      ctx.fillText(bullet, 160, y);
-      y += 110;
-    });
-
-    // Timestamp footer
     ctx.fillStyle = '#64748b';
-    ctx.font = '24px monospace';
-    ctx.fillText(`SNAP TIMESTAMP: ${new Date().toLocaleTimeString()} • PHOTO STILL`, 80, 980);
+    ctx.font = '28px monospace';
+    ctx.fillText(`Slide #${slideNumber} • Captured ${new Date().toLocaleTimeString()}`, 120, 190);
+
+    // Clean outline
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(60, 60, 1800, 960);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
     onSlideCaptured({
       imageData: dataUrl,
       title: defaultTitle,
-      topicId: activeTopic ? activeTopic.id : null,
+      topicId: activeTopic?.id,
       conferenceId: conference ? conference.id : null,
       notes: ''
     });
@@ -218,34 +217,28 @@ export function CameraView({
     showSavedConfirmation(slideNumber);
   };
 
-  // Quick Start New Session with Topic Name
-  const handleQuickStartSession = (e) => {
-    e.preventDefault();
-    if (!newTopicInput.trim()) return;
-
-    if (onStartSession) {
-      onStartSession(newTopicInput.trim());
-    }
-    setNewTopicInput('');
-    setIsCreatingNewSession(false);
-  };
-
   // Handle File Upload Fallback
   const handleFileUpload = (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    if (!activeTopic) {
+      setMissingSessionPrompt(true);
+      setIsCreatingNewSession(true);
+      return;
+    }
 
     Array.from(files).forEach((file, index) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const dataUrl = event.target.result;
         const slideNumber = recentSlides.length + index + 1;
-        const defaultTitle = file.name.replace(/\.[^/.]+$/, '') || `${activeTopic?.name || 'Slide'} #${slideNumber}`;
+        const defaultTitle = file.name.replace(/\.[^/.]+$/, '') || `${activeTopic.name} #${slideNumber}`;
 
         onSlideCaptured({
           imageData: dataUrl,
           title: defaultTitle,
-          topicId: activeTopic ? activeTopic.id : null,
+          topicId: activeTopic.id,
           conferenceId: conference ? conference.id : null,
           notes: ''
         });
@@ -259,110 +252,202 @@ export function CameraView({
 
   return (
     <div className="camera-view-container">
-      {/* Top Banner: Prominent Session Topic & Finish Controls */}
+      {/* Top Banner: UNMISSABLE OPTION TO ADD SESSION NAME BEFORE TAKING PICS */}
       <div className="camera-topic-bar" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-          {/* Active Session Display / Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-            {isCreatingNewSession ? (
-              <form onSubmit={handleQuickStartSession} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
-                <input
-                  type="text"
-                  className="input-field"
-                  placeholder="Enter Session / Topic Name (e.g. AI Keynote)..."
-                  value={newTopicInput}
-                  onChange={(e) => setNewTopicInput(e.target.value)}
-                  autoFocus
-                  style={{ fontSize: 13, padding: '6px 12px', minWidth: 220 }}
-                />
-                <button type="submit" className="btn btn-primary" style={{ fontSize: 12, padding: '6px 14px' }}>
-                  Start Session
-                </button>
+        
+        {/* CASE 1: NO SESSION ACTIVE YET OR USER WANTS TO ADD/RENAME SESSION */}
+        {!activeTopic || isCreatingNewSession ? (
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.22) 0%, rgba(6, 182, 212, 0.16) 100%)',
+              border: missingSessionPrompt ? '2px solid #f43f5e' : '2px solid rgba(139, 92, 246, 0.55)',
+              borderRadius: 14,
+              padding: '14px 18px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 20 }}>🏷️</span>
+                <div>
+                  <h3 style={{ fontSize: 14.5, color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {missingSessionPrompt ? '⚠️ Please Add Session Name to Begin Snapping' : 'Add Session Name Before Starting Pics'}
+                  </h3>
+                  <p style={{ fontSize: 12, color: missingSessionPrompt ? '#fca5a5' : 'var(--text-secondary)' }}>
+                    Type the topic or speaker name below. All photos you snap will be auto-saved into this session.
+                  </p>
+                </div>
+              </div>
+
+              {activeTopic && (
                 <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ fontSize: 12, padding: '6px 10px' }}
-                  onClick={() => setIsCreatingNewSession(false)}
+                  className="btn btn-ghost btn-pill"
+                  style={{ width: 28, height: 28, padding: 0 }}
+                  onClick={() => {
+                    setIsCreatingNewSession(false);
+                    setMissingSessionPrompt(false);
+                  }}
+                  title="Cancel renaming"
                 >
-                  Cancel
+                  <X size={15} />
                 </button>
-              </form>
-            ) : (
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  className="active-topic-selector"
-                  onClick={() => setIsTopicDropdownOpen(!isTopicDropdownOpen)}
-                  title="Switch or change active topic"
-                  style={{ padding: '6px 14px', borderRadius: 20 }}
-                >
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      backgroundColor: activeTopic?.color || 'var(--accent-purple)',
-                      boxShadow: `0 0 8px ${activeTopic?.color || 'var(--accent-purple)'}`
-                    }}
-                  />
-                  <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 700, fontSize: 13 }}>
-                    Session: {activeTopic ? activeTopic.name : 'Select Topic'}
+              )}
+            </div>
+
+            <form onSubmit={handleStartSessionSubmit} style={{ display: 'flex', gap: 8 }}>
+              <input
+                ref={topicInputRef}
+                type="text"
+                className="input-field"
+                placeholder="Enter Session Name (e.g., Keynote, AI in Healthcare, Panel)..."
+                value={newTopicInput}
+                onChange={(e) => {
+                  setNewTopicInput(e.target.value);
+                  if (missingSessionPrompt) setMissingSessionPrompt(false);
+                }}
+                style={{
+                  fontSize: 14,
+                  padding: '10px 14px',
+                  flex: 1,
+                  background: 'rgba(10, 13, 22, 0.95)',
+                  borderColor: missingSessionPrompt ? '#f43f5e' : 'var(--accent-purple)'
+                }}
+              />
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={{ fontSize: 13, padding: '10px 20px', fontWeight: 700, whiteSpace: 'nowrap' }}
+              >
+                <Check size={16} /> Start Session
+              </button>
+            </form>
+          </div>
+        ) : (
+          /* CASE 2: SESSION IS ACTIVE - PROMINENT GLOWING SESSION BAR */
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid rgba(139, 92, 246, 0.4)',
+              borderRadius: 14,
+              padding: '10px 16px',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.35)',
+              flexWrap: 'wrap',
+              gap: 10
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+              <span
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  backgroundColor: activeTopic.color || 'var(--accent-purple)',
+                  boxShadow: `0 0 10px ${activeTopic.color || 'var(--accent-purple)'}`,
+                  flexShrink: 0
+                }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent-emerald)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    🟢 Active Session
                   </span>
-                  <ChevronDown size={14} style={{ opacity: 0.7 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    • {recentSlides.length} slides auto-saved
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: '#ffffff',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 240
+                  }}
+                  title={activeTopic.name}
+                >
+                  {activeTopic.name}
+                </div>
+              </div>
+
+              {/* Edit Session Name & New Session buttons */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11.5, padding: '3px 8px', height: 'auto', color: 'var(--accent-cyan)' }}
+                  onClick={() => {
+                    setNewTopicInput(activeTopic.name);
+                    setIsCreatingNewSession(true);
+                  }}
+                  title="Rename current session"
+                >
+                  <Edit3 size={12} /> Rename
                 </button>
 
                 <button
                   className="btn btn-ghost"
-                  style={{ fontSize: 12, padding: '5px 10px' }}
-                  onClick={() => setIsCreatingNewSession(true)}
-                  title="Start a new session with new topic name"
+                  style={{ fontSize: 11.5, padding: '3px 8px', height: 'auto' }}
+                  onClick={() => {
+                    setNewTopicInput('');
+                    setIsCreatingNewSession(true);
+                  }}
+                  title="Start another session"
                 >
-                  <Plus size={13} /> New Session
+                  <Plus size={12} /> New Session
                 </button>
               </div>
-            )}
+            </div>
+
+            {/* Right Action: Finish Session Button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                className="btn btn-pill"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: 12.5,
+                  padding: '7px 16px',
+                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.4)'
+                }}
+                onClick={() => onFinishSession(activeTopic.id)}
+                title="Finish session and compile into PDF, PPTX, Notes, or ZIP"
+              >
+                <Flag size={14} />
+                <span>Finish Session ({recentSlides.length})</span>
+              </button>
+
+              <button
+                className="btn btn-ghost btn-pill"
+                style={{ width: 34, height: 34, padding: 0, background: showGrid ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.4)' }}
+                onClick={() => setShowGrid(!showGrid)}
+                title="Toggle framing grid"
+              >
+                <Grid size={15} />
+              </button>
+
+              <button
+                className="btn btn-ghost btn-pill"
+                style={{ width: 34, height: 34, padding: 0, background: 'rgba(0,0,0,0.4)' }}
+                onClick={toggleFacingMode}
+                title="Switch camera"
+              >
+                <SwitchCamera size={15} />
+              </button>
+            </div>
           </div>
+        )}
 
-          {/* Right Action: Finish Session Button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              className="btn btn-pill"
-              style={{
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 700,
-                fontSize: 12.5,
-                padding: '7px 16px',
-                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)'
-              }}
-              onClick={() => onFinishSession(activeTopic?.id)}
-              title="Finish session and compile slides into PDF, PPTX, Notes, or ZIP"
-            >
-              <Flag size={14} />
-              <span>Finish Session ({recentSlides.length})</span>
-            </button>
-
-            <button
-              className="btn btn-ghost btn-pill"
-              style={{ width: 34, height: 34, padding: 0, background: showGrid ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.4)' }}
-              onClick={() => setShowGrid(!showGrid)}
-              title="Toggle 16:9 framing grid"
-            >
-              <Grid size={15} />
-            </button>
-
-            <button
-              className="btn btn-ghost btn-pill"
-              style={{ width: 34, height: 34, padding: 0, background: 'rgba(0,0,0,0.4)' }}
-              onClick={toggleFacingMode}
-              title="Switch camera"
-            >
-              <SwitchCamera size={15} />
-            </button>
-          </div>
-        </div>
-
-        {/* Reassurance Banner: PHOTO-ONLY MODE (NO VIDEO RECORDING) */}
+        {/* Reassurance Banner: Photo Snap Mode (No video recording) */}
         <div
           style={{
             display: 'flex',
@@ -383,73 +468,13 @@ export function CameraView({
 
           <div style={{ color: 'var(--accent-cyan)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
             <span>Auto-Save:</span>
-            <span style={{ color: '#10b981' }}>Active</span>
+            <span style={{ color: '#10b981' }}>{activeTopic ? 'Active' : 'Awaiting Session Name'}</span>
           </div>
         </div>
-
-        {/* Dropdown for selecting session topic */}
-        {isTopicDropdownOpen && (
-          <div
-            className="glass-modal"
-            style={{
-              position: 'absolute',
-              top: 75,
-              left: 16,
-              width: 300,
-              padding: '8px 0',
-              zIndex: 70,
-              borderRadius: 14,
-              boxShadow: 'var(--shadow-lg)'
-            }}
-          >
-            <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Select Existing Session / Topic
-            </div>
-            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-              {topics.map((t) => (
-                <div
-                  key={t.id}
-                  onClick={() => {
-                    onSelectTopic(t.id);
-                    setIsTopicDropdownOpen(false);
-                  }}
-                  style={{
-                    padding: '9px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    background: t.id === activeTopic?.id ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
-                    color: t.id === activeTopic?.id ? '#ffffff' : 'var(--text-secondary)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: t.color || '#a78bfa', flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{t.name}</span>
-                  </div>
-                  {t.id === activeTopic?.id && <Check size={14} color="var(--accent-purple)" />}
-                </div>
-              ))}
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px 8px 2px' }}>
-              <button
-                className="btn btn-ghost"
-                style={{ width: '100%', justifyContent: 'flex-start', fontSize: 12, padding: '6px 10px' }}
-                onClick={() => {
-                  setIsTopicDropdownOpen(false);
-                  setIsCreatingNewSession(true);
-                }}
-              >
-                <Plus size={14} /> + Add New Topic Name
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Viewfinder Feed */}
-      <div className="camera-feed-wrapper" onClick={triggerCapture} style={{ cursor: 'pointer' }} title="Tap anywhere to snap slide photo">
+      <div className="camera-feed-wrapper" onClick={triggerCapture} style={{ cursor: 'pointer' }} title={activeTopic ? 'Tap anywhere to snap slide photo' : 'Add session name first to snap'}>
         {cameraError ? (
           <div style={{ textAlign: 'center', padding: 24, maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <Camera size={44} color="var(--accent-purple)" style={{ marginBottom: 12, opacity: 0.8 }} />
@@ -462,7 +487,7 @@ export function CameraView({
                 className="btn btn-primary"
                 onClick={() => triggerCapture()}
               >
-                <Camera size={15} /> Simulate Snap Slide
+                <Camera size={15} /> Snap Test Slide
               </button>
               <button
                 className="btn btn-secondary"
@@ -482,14 +507,13 @@ export function CameraView({
           />
         )}
 
-        {/* 16:9 Presentation Framing Guide */}
+        {/* Clean 16:9 Slide Framing Guide */}
         {showGrid && !cameraError && (
           <div className="slide-framing-guide focused">
             <div className="frame-corner frame-corner-tl" />
             <div className="frame-corner frame-corner-tr" />
             <div className="frame-corner frame-corner-bl" />
             <div className="frame-corner frame-corner-br" />
-            <div className="frame-label">16:9 Slide Framing Guide (Tap frame to snap)</div>
           </div>
         )}
 
@@ -527,16 +551,16 @@ export function CameraView({
       {/* Bottom Dock with Rapid Snaps Filmstrip & Shutter Button */}
       <div className="camera-bottom-dock">
         {/* Slides Reel for active topic */}
-        {recentSlides.length > 0 && (
+        {recentSlides.length > 0 && activeTopic && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Current Session: {activeTopic?.name} ({recentSlides.length} slides auto-saved)
+              Current Session: {activeTopic.name} ({recentSlides.length} slides auto-saved)
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 className="btn btn-ghost"
                 style={{ fontSize: 11, padding: '2px 8px', height: 'auto', color: 'var(--accent-emerald)' }}
-                onClick={() => onFinishSession(activeTopic?.id)}
+                onClick={() => onFinishSession(activeTopic.id)}
               >
                 Finish & Compile ({recentSlides.length})
               </button>
@@ -592,12 +616,12 @@ export function CameraView({
             <button
               className="shutter-btn-outer"
               onClick={triggerCapture}
-              title="Snap Slide Photo (Auto-saved into active topic with 0 delay)"
+              title={activeTopic ? `Snap photo for "${activeTopic.name}"` : 'Enter session name first to snap'}
             >
               <div className="shutter-btn-inner" />
             </button>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700 }}>
-              SNAP PHOTO (AUTO-SAVE)
+            <span style={{ fontSize: 11, color: activeTopic ? 'var(--text-secondary)' : '#f87171', fontWeight: 700 }}>
+              {activeTopic ? 'SNAP PHOTO (AUTO-SAVE)' : 'ENTER SESSION NAME FIRST'}
             </span>
           </div>
 

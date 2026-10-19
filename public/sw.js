@@ -1,5 +1,5 @@
 // SlideSnap Service Worker - Auto-Updating Network-First Strategy for iOS PWA
-const CACHE_NAME = 'slidesnap-v4-20261019';
+const CACHE_NAME = 'slidesnap-v5-blank-20261019';
 
 const PRECACHE_ASSETS = [
   'manifest.webmanifest',

@@ -152,24 +152,24 @@ export function SettingsModal({
             <strong>Offline Conference Mode:</strong> If no API key is supplied or conference hall Wi-Fi drops, SlideSnap automatically uses on-device OCR and local heuristic synthesis to organize and summarize slides.
           </div>
 
-          {/* Reset / Sample Data */}
+          {/* Clear All / Start 100% Blank */}
           <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 14 }}>
-            <h4 style={{ fontSize: 13, color: '#ffffff', marginBottom: 6 }}>Demo Data & Sample Slides</h4>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h4 style={{ fontSize: 13, color: '#ffffff', marginBottom: 6 }}>Wipe Database & Clean Slate</h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                Reload sample AI Summit slides and topics
+                Delete any previous sessions/slides and start with an entirely blank workspace
               </span>
               <button
                 className="btn btn-secondary"
-                style={{ fontSize: 12, padding: '6px 12px' }}
+                style={{ fontSize: 12, padding: '6px 12px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
                 onClick={() => {
-                  if (confirm('Reload sample conference data?')) {
+                  if (confirm('Clear all sessions and slides to start 100% blank?')) {
                     onResetSampleData();
                     onClose();
                   }
                 }}
               >
-                <RotateCcw size={13} /> Reset Demo Data
+                <RotateCcw size={13} /> Clear All to Blank
               </button>
             </div>
           </div>
